@@ -1,0 +1,63 @@
+<meta charset="utf-8" emacsmode="-*- markdown -*-"><link rel="stylesheet" href="https://casual-effects.com/markdeep/latest/dark.css?">
+
+
+**基于均匀网格的动态多光源直接光照**
+
+![Video](UniformLightGrid.mp4)
+
+# 项目简介
+
+当场景中存在大量光源时，对所有光源逐一进行光照计算无法达到实时渲染的需求，因此多光源问题一直是图形学方向的研究热点。
+
+[[Bitterli](https://dl.acm.org/doi/abs/10.1145/3386569.3392481)]等提出了基于时空复用的水塘重采样算法。该算法在所有光源中根据光照强度挑选出32个候选光源组成水塘，然后在水塘中根据光源对着色点的光照贡献挑选出1个光源，并向其发射光线以判断可见性。在着色时随机选择当前帧挑选的光源，或上一帧挑选的光源，或邻近的像素挑选的光源进行着色。该算法的缺点是在构建水塘时没有考虑空间因素。
+
+[[Daqi Lin](https://dl.acm.org/doi/abs/10.1145/3384543)]等将场景中的所有光源以二叉树的形式进行存储，并在渲染时基于随机光源裁剪(Stochastic Lightcuts)算法对光源进行重要性采样。该算法的缺点是使用了莫顿编码和二叉树来组织光源，由于相邻的Morton Code可能会因为Z型曲线发生跳变，实际在空间中的距离离得很远。另外二叉树对空间的划分也不够均匀，会导致采样的效率偏低。
+
+本项目的基本思想是根据空间位置和光照强度挑选出候选光源，然后在候选光源中进行重采样。本项目将场景均匀划分为多个均匀网格，并将均匀网格组织为八叉树。八叉树中的一个节点代表了场景中某一块具体的空间，另外还存储了该空间中光源的数量以及总光照强度。渲染时根据空间位置和光照强度自顶向下遍历八叉树。完成遍历后，当前节点所包含的光源即为候选光源。在候选光源中进行重采样获取一个光源，并从着色点向该光源发射光线并进行光照计算。
+<!-- 完成遍历？ -->
+
+# 主要流程
+
+![算法主要流程图](imgs/UniformLightGrid-Pipeline.png)
+
+1. 将所有光源根据 Morton Code 进行排序
+2. 将排序后的光源根据空间位置划分至不同的均匀网格中
+3. 将均匀网格组织为八叉树
+4. 根据空间位置和光照强度自顶向下遍历八叉树
+5. 在当前节点包含的光源中进行重采样
+6. 向重采样得到的光源发射光线并进行光照计算
+7. 后处理：滤波，色调映射等
+
+# 成果
+
+ - 算法效果
+
+ ![渲染结果](imgs/UniformLightGrid.png)
+
+ (图片上半部分为渲染结果，下半部分为图片部分细节放大)
+
+![本项目结果与 Ground Truth 结果对比](imgs/UniformLightGrid-Compare-1.png)
+
+![本项目结果与 Ground Truth 和 Lightcuts 结果对比](imgs/UniformLightGrid-Compare-2.png)
+
+ - 算法效率
+
+ 在含有~20000光源的场景(视频/第一张图片所展示的街角场景)中，本项目渲染一帧所需时间为30ms。
+
+| 渲染遍 | CPU(ms) | GPU(ms) |
+| -----  | ------ | -------- |
+| 构建均匀网格 | 0.12 | 0.01 |
+| 构建八叉树 | 0.35 | 0.02 |
+| 遍历八叉树与重采样 | 0.30 | 4.80 |
+| **总计** | 0.77 | 4.83 |
+
+
+<style class="fallback">
+    body{visibility:hidden}
+</style>
+<script>
+    markdeepOptions={tocStyle:'none'};
+</script>
+
+<!-- Markdeep: -->
+<script src="https://casual-effects.com/markdeep/latest/markdeep.min.js?" charset="utf-8"></script>
