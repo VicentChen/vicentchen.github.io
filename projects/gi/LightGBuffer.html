@@ -1,8 +1,24 @@
-<meta charset="utf-8">
+<meta charset="utf-8" emacsmode="-*- markdown -*-"><link rel="stylesheet" href="https://casual-effects.com/markdeep/latest/dark.css?">
 
 **基于光场探针的动态光源全局光照**
 
-Under Construction.
+![Video](LightGBuffer.mp4 width=100%)
+
+# 项目简介
+
+传统的辐照度探针技术或者SSR技术只能实现间接光照的漫反射或者光泽反射。基于预计算的光场探针GI方法在探针位置同时生成辐射率和几何信息，通过对辐射率信息进行预先卷积以及利用全景的几何信息进行ray marching，能够生成多次反射的漫反射和光泽效果。但探针处辐射率和几何信息的耦合使得动态更新探针数据变得很难，算法难以适应动态场景以及动态光照。
+
+本项目尝试把辐射率信息和几何信息解耦，提出使用在光源处生成g-buffer(即light-g-buffer)来对这些信息进行重建，使得在维持光场探针方法具有的漫反射和光泽反射的效果的同时，还能支持动态多光源。
+
+# 算法流程
+
+![算法主要流程](imgs/lgb-pipeline.png)
+
+# 成果
+
+- **Efficiently reconstruct light field probes from light-G-buffers.** <br/>
+    Xuechao Chen, Yu Nie, <u>Jianwei Chen</u>, Yanli Liu and Yanci Zhang <br/>
+    Computers & Graphics Volume 94, February 2021, Pages 144-151 <br/>
 
 <style class="fallback">
     body{visibility:hidden}

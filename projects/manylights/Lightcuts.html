@@ -1,8 +1,21 @@
-<meta charset="utf-8">
+<meta charset="utf-8" emacsmode="-*- markdown -*-"><link rel="stylesheet" href="https://casual-effects.com/markdeep/latest/dark.css?">
 
 **基于光源裁剪的动态多光源直接光照**
 
-Under Construction.
+![Zeroday场景](imgs/Lightcuts.png)
+
+![街角场景](imgs/Lightcuts-bistro.png)
+
+# 项目简介
+
+本项目是对论文"Real-Time Stochastic Lightcuts"的复现。实现了多光源场景的实时渲染，在~20000个光源的街角场景中渲染一帧所需时间约为60ms。
+
+# 算法流程
+
+1. 使用 Morton Code 对光源位置进行编码和排序
+2. 将编码后的光源作为二叉树的叶节点，自底向上构建二叉树
+3. 渲染时遍历该二叉树，遍历方法与随机光源裁剪方法(Stochastic Lightcuts)相同
+4. 在遍历后可获得多个节点组成的集合，在集合包含的所有光源中选取一个光源，并向其发射光源进行可见性判断和光照计算。
 
 <style class="fallback">
     body{visibility:hidden}
