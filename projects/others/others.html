@@ -1,20 +1,30 @@
 <meta charset="utf-8" emacsmode="-*- markdown -*-"><link rel="stylesheet" href="https://casual-effects.com/markdeep/latest/dark.css?">
 
-** 其他项目 (Under Construction) **
+**其他项目 (Under Construction)**
 
 这里整合了我在研究生期间的其他项目。
-
-# 扩展的Falcor 4.2
-
-添加对 Procedural Primitive 及 自定义 intersection shader 的支持。
-
-# `FunctionManager`
-
-实现关于函数的反射，支持函数的动态延迟绑定。
 
 # ReSTIR
 
 基于时空复用和水塘重采样的动态多光源直接光照，SIGGRAPH 2020论文 "Spatiotemporal reservoir resampling for real-time ray tracing with dynamic direct lighting" 的复现。
+
+
+![ReSTIR复现效果](ReSTIR.mp4 width=100%)
+
+
+[[核心代码](https://github.com/VicentChen/UniformLightGrid/tree/master/Source/RenderPasses/ReSTIR)]
+
+# 扩展的Falcor 4.2
+
+ - 添加对 `Procedural Primitive` 及 自定义 `intersection shader` 的支持。
+ - 支持在 `.fscene` 场景文件中修改模型材质
+ - 修复 `anyhit shader` 未被调用的 BUG
+
+[[项目地址](https://github.com/VicentChen/Falcor)]
+
+# `FunctionManager`
+
+实现关于函数的反射，支持函数的动态延迟绑定。
 
 <style class="fallback">
     body{visibility:hidden}
