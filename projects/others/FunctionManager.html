@@ -1,0 +1,581 @@
+<meta charset="utf-8" emacsmode="-*- markdown -*-">
+<!-- <link rel="stylesheet" href="https://casual-effects.com/markdeep/latest/dark.css?"> -->
+
+**Function Manager**
+
+Function Manager是一个基于`c++17`，用于实现关于函数的反射的项目。当前支持对下列函数进行反射：
+
+ - 普通函数
+ - 命名空间内的函数
+ - 模板函数
+ - 静态函数
+ - 模板类的静态函数
+ - 成员函数
+
+(请点击详细信息以查看实现)
+<details>
+```cpp
+#include <functional>
+#include <map>
+#include <iostream>
+
+#define _REGISTER_FUNCTION(VariableName, FunctionSig, FunctionPtr) \
+	bool Bool##VariableName = register_function<decltype(FunctionPtr)>(FunctionSig, FunctionPtr);
+
+template <typename FunctionType>
+class FunctionManager {
+	// 没有delete这个指针，考虑到这是demo，忽略这个问题
+	inline static FunctionManager<FunctionType>* p_function_manager = nullptr;
+
+	std::map<std::string, FunctionType> m_sig_func_map;
+
+public:
+	static FunctionManager<FunctionType>* get_instance() {
+		if (!p_function_manager) p_function_manager = new FunctionManager<FunctionType>;
+		return p_function_manager;
+	}
+
+	// 也可以使用insert，二者间存在一点区别
+	void register_function(const std::string& sig, FunctionType function) { m_sig_func_map[sig] = function; }
+	
+	// 实际上不能使用运算符[]，因为当map中sig不存在时会自动创建一个<sig, empty>对象，demo中忽略这个问题
+	FunctionType get_function(const std::string& sig) { return m_sig_func_map[sig]; }
+};
+
+template <typename FunctionPtr>
+bool register_function(const std::string& function_sig, FunctionPtr function_ptr) {
+	auto function_obj = static_cast<std::function<FunctionPtr>>(function_ptr);
+	auto p_function_manager = FunctionManager<decltype(function_obj)>::get_instance();
+	p_function_manager->register_function(function_sig, function_obj);
+	return true;
+}
+
+template <typename FunctionType>
+FunctionType get_function(const std::string& function_sig) {
+	auto p_function_manager = FunctionManager<FunctionType>::get_instance();
+	return p_function_manager->get_function(function_sig);
+}
+
+template <typename Ret, typename Struct, typename ...Args, typename ObjectPtr, int... Indices>
+std::function<Ret(Args...)> erase_class_info(Ret(Struct::* func_ptr)(Args...), ObjectPtr obj_ptr, std::integer_sequence<int, Indices...>)
+{
+	std::function<Ret(Args...)> erased_function = std::bind(func_ptr, obj_ptr, std::_Ph<Indices + 1>{}...);
+	return erased_function;
+}
+
+template <typename Ret, typename Struct, typename ...Args, typename ObjectPtr>
+bool register_memeber_function(const std::string& sig, Ret(Struct::* func_ptr)(Args...), ObjectPtr obj_ptr) {
+	std::function<Ret(Args...)> erased_func = erase_class_info(func_ptr, obj_ptr, std::make_integer_sequence<int, sizeof...(Args)>());
+	auto p_funciton_manager = FunctionManager<decltype(erased_func)>::get_instance();
+	p_funciton_manager->register_function(sig, erased_func);
+	return true;
+}
+
+template <typename Ret, typename Struct, typename ...Args, typename ObjectPtr, int... Indices>
+std::function<Ret(Args...)> erase_class_info(Ret(Struct::* func_ptr)(Args...) const, ObjectPtr obj_ptr, std::integer_sequence<int, Indices...>)
+{
+	std::function<Ret(Args...)> erased_function = std::bind(func_ptr, obj_ptr, std::_Ph<Indices + 1>{}...);
+	return erased_function;
+}
+
+template <typename Ret, typename Struct, typename ...Args, typename ObjectPtr>
+bool register_memeber_function(const std::string& sig, Ret(Struct::* func_ptr)(Args...) const, ObjectPtr obj_ptr) {
+	std::function<Ret(Args...)> erased_func = erase_class_info(func_ptr, obj_ptr, std::make_integer_sequence<int, sizeof...(Args)>());
+	auto p_funciton_manager = FunctionManager<decltype(erased_func)>::get_instance();
+	p_funciton_manager->register_function(sig, erased_func);
+	return true;
+}
+
+// ----- 普通函数注册 ----- //
+// 普通函数
+int add(int a, int b) { return a + b; }
+_REGISTER_FUNCTION(ADD, "ADD", add);
+int mul(int a, int b) { return a * b; }
+_REGISTER_FUNCTION(MUL, "MUL", mul);
+
+// 命名空间内函数
+namespace VicentSpace { int add(int a, int b) { return a + b; } }
+_REGISTER_FUNCTION(NAMESPACE_ADD, "NAMESPACE_ADD", VicentSpace::add);
+
+// 模板函数
+template<typename T> T addT(T a, T b) { return a + b; }
+_REGISTER_FUNCTION(TEMPLATE_ADD, "TEMPLATE_ADD", addT<int>);
+
+// ----- 类内函数注册 ----- //
+class Real {
+public:
+	int add(int a, int b) const { return a + b; }
+	int sub(int a, int b) { return a - b; }
+	static int mul(int a, int b) { return a * b; }
+};
+Real real;
+
+template <typename T>
+class RealT {
+public:
+	T addT(T a, T b) const { return a + b; }
+	T subT(T a, T b) { return a - b; }
+	static T mulT(T a, T b) { return a * b; }
+};
+RealT<int> real_t;
+
+// 静态函数
+_REGISTER_FUNCTION(STATIC_MUL, "STATIC_MUL", Real::mul);
+
+// 静态模板函数
+_REGISTER_FUNCTION(STATIC_TEMPLATE_MUL, "STATIC_TEMPLATE_MUL", RealT<int>::mulT);
+
+// 成员函数
+bool b1 = register_memeber_function("REAL_ADD", &Real::add, &real);
+bool b2 = register_memeber_function("REAL_SUB", &Real::sub, &real);
+
+// 模板成员
+bool b3 = register_memeber_function("REALT_ADD", &RealT<int>::addT, &real_t);
+bool b4 = register_memeber_function("REALT_SUB", &RealT<int>::subT, &real_t);
+
+int main(int argc, char* argv[]) {
+
+	// 普通函数
+	auto normal_add = get_function<std::function<decltype(add)>>("ADD");
+	auto normal_mul = get_function<std::function<decltype(add)>>("MUL");
+	std::cout << "Normal Add 1 + 2 = " << normal_add(1, 2) << std::endl;
+	std::cout << "Normal Mul 1 * 2 = " << normal_mul(1, 2) << std::endl;
+
+	// 命名空间内函数
+	auto namespace_add = get_function<std::function<decltype(VicentSpace::add)>>("NAMESPACE_ADD");
+	std::cout << "Namespace Add 1 + 2 = " << namespace_add(1, 2) << std::endl;
+
+	// 模板函数
+	auto template_add = get_function<std::function<int(int, int)>>("TEMPLATE_ADD");
+	std::cout << "Template Add 1 + 2 = " << template_add(1, 2) << std::endl;
+
+	// 静态函数
+	auto static_mul = get_function<std::function<int(int, int)>>("STATIC_MUL");
+	std::cout << "Static Mul 1 * 2 = " << static_mul(1, 2) << std::endl;
+	
+	// 静态模板函数
+	auto static_template_mul = get_function<std::function<int(int, int)>>("STATIC_TEMPLATE_MUL");
+	std::cout << "Static Template Mul 1 * 2 = " << static_template_mul(1, 2) << std::endl;
+	
+	// 成员函数
+	auto real_add = get_function<std::function<int(int, int)>>("REAL_ADD");
+	auto real_sub = get_function<std::function<int(int, int)>>("REAL_SUB");
+	std::cout << "Member Add 2 + 1 = " << real_add(2, 1) << std::endl;
+	std::cout << "Const Member Sub 2 - 1 = " << real_sub(2, 1) << std::endl;
+
+	// 模板成员
+	auto real_t_add = get_function<std::function<int(int, int)>>("REALT_ADD");
+	auto real_t_sub = get_function<std::function<int(int, int)>>("REAL_SUB");
+	std::cout << "Template Member Add 2 + 1 = " << real_t_add(2, 1) << std::endl;
+	std::cout << "Template Const Member Sub 2 - 1 = " << real_t_sub(2, 1) << std::endl;
+	
+	return 0;
+}
+```
+</details>
+
+# 概述
+有时候我们会对相同的数据做不同的操作，例如：
+```cpp
+int add(int a, int b) { return a + b; }
+int mul(int a, int b) { return a * b; }
+int do_sth(int a, int b, const std::string& function_name) {
+	if (function_name == "add") return add(a, b);
+	if (function_name == "mul") return mul(a, b);
+}
+```
+这种做法是可行的，但是当我们还需要添加`sub(a, b)`，`div(a, b)`等等的多个函数时，每添加一个函数，我们都要在`do_sth`中添加一个`if`，很容易出错，也不符合开闭原则。
+
+另一种实现方法是将每个操作单独封装成一个类，然后使用工厂模式创建。这种做法是符合开闭原则的，但是每添加一个函数就要添加一个类未免也太繁琐了。
+
+理想情况下，倘若有一门语言同时结合了`c++`, `Java`,`Python`，应该这样添加函数：
+```cpp
+// 函数管理类FunctionManager
+//     @Register()：将函数注册到这个类中
+//     getFunction(): 将已注册的函数返回
+class FunctionManager;
+
+@Register("add") // 将函数add注册到FunctionManager，通过字符串"add"能够找到这个函数
+int add(int a, int b) { return a + b; }
+@Register("mul") // 将函数mul注册到FunctionManager，通过字符串"mul"能够找到这个函数
+int mul(int a, int b) { return a * b; }
+int do_sth(int a, int b, const std::string& function_name) {
+	// 函数管理类根据function_name返回一个std::function
+	std::function<int(int, int)> Function = FunctionManager.getFunction(function_name);
+	return Function(a, b);
+}
+```
+ - `FunctionManager`: 管理函数的类
+ - `@Register("Add")`: 将函数指针和函数签名(能够唯一标识该函数的字符串)添加到`FunctionManager`中
+ - `FunctionManager.getFunction()`: 根据函数签名返回函数指针
+
+很明显，当前的`c++`不支持`@Register`，退而求其次我们使用宏进行注册，最终本文实现的效果是(在最后提供了可运行的完整程序)：
+```cpp
+// xxx.h
+int add(int a, int b);
+// xxx.cpp
+// 注册函数，参数为：变量名(ADD)，函数签名("ADD")，函数指针(add)
+_REGISTER_FUNCTION(ADD, "ADD", add);
+int add(int a, int b) { return a + b; }
+// main.cpp
+int do_sth(int a, int b, const std::string& func_sig) {
+	// FunctionManager是一个单例
+	auto p_function_manager = FunctionManager<decltype(add)>::getInstance();
+	// 此处返回已注册的函数
+	auto func = p_function_manager->getFunction(func_sig);
+	return 
+}
+```
+
+# 实现
+我们将管理函数的类命名为`FunctionManager`。仔细分析我们的需求，不难发现实际上我们需要根据字符串**查找**已**注册**的函数对象。
+
+## 查找的实现
+STL中已经有了能够满足我们需求的`std::map<std::string, FunctionType>`容器，因此查找功能已经实现了。需要注意的有：
+ - `FunctionType`需要外部提供，而函数的返回值、参数都会改变都会影响`FunctionType`，我们不可能把`FunctionType`硬编码到程序中，这时候就需要模板。
+ - 由于函数指针不能够作为函数的返回值，获取函数的接口只能返回`std::function`，因此`map`中存储的也应当是`std::function`。
+ - 考虑到程序中仅有一个`FunctionManager`，将`FunctionManager`设置为单例更方便(同时也能满足注册函数的需求)。
+
+```cpp
+template <typename FunctionType>
+class FunctionManager {
+	// 没有delete这个指针，考虑到这是demo，忽略这个问题
+	inline static FunctionManager<FunctionType>* p_function_manager = nullptr;
+
+	std::map<std::string, FunctionType> m_sig_func_map;
+
+public:
+	static FunctionManager<FunctionType>* get_instance() {
+		if (!p_function_manager) p_function_manager = new FunctionManager<FunctionType>;
+		return p_function_manager;
+	}
+	
+	// 实际上不能使用运算符[]，因为当map中sig不存在时会自动创建一个<sig, empty>对象，demo中忽略这个问题
+	FunctionType get_function(const std::string& sig) { return m_sig_func_map[sig]; }
+};
+```
+
+## 注册的实现
+注册实际上就是将函数签名(字符串)和函数(`std::function`对象)添加到`FunctionManager::m_sig_func_map`中,只需要添加一个接口：
+```cpp
+// 也可以使用insert，二者间存在一点区别
+void register_function(const std::string& sig, FunctionType function) { 
+	m_sig_func_map[sig] = function;
+}
+```
+## 尝试使用
+
+到这里我们已经可以使用`FunctionManager`了：
+```cpp
+int add(int a, int b) { return a + b; }
+void use() {
+	std::function<int(int, int)> a(add);
+	FunctionManager<std::function<decltype(add)>>::get_instance()->register_function("add", a);
+	auto another_add = FunctionManager<std::function<decltype(add)>>::get_instance()->get_function("add");
+	std::cout << another_add(1, 3) << std::endl;
+}
+```
+我们看到`FunctionManager`的使用其实是很不方便的：
+ - 注册时需要提供对应函数的`std::function`对象，实际上我们在使用的时候只希望提供函数的指针
+ - 注册和获取函数时都需要需要获取单例
+
+这些冗杂的代码可以交给单独的接口进行封装：
+```cpp
+template <typename FunctionPtr>
+void register_function(const std::string& function_sig, FunctionPtr function_ptr) {
+	auto function_obj = static_cast<std::function<FunctionPtr>>(function_ptr);
+	auto p_function_manager = FunctionManager<decltype(function_obj)>::get_instance();
+	p_function_manager->register_function(function_sig, function_obj);
+}
+
+template <typename FunctionType>
+FunctionType get_function(const std::string& function_sig) {
+	auto p_function_manager = FunctionManager<FunctionType>::get_instance();
+	return p_function_manager->get_function(function_sig);
+}
+
+int main(int argc, char* argv[]) {
+	register_function<decltype(add)>("add", add); // 只提供指针
+	auto another_add = get_function<std::function<int(int, int)>>("add");
+	std::cout << another_add(1, 4) << std::endl;
+	return 0;
+}
+```
+
+相比之下使用起来方便多了，实际上到这里`FunctionManager`的实现就已经完成了，但是还要让`FunctionManager`更好用，以及让`FunctionManager`适用于更多类型的函数，**下面才是文章的重点**
+
+# 注册
+现有的`FunctionManager`如果直接使用还会存在一个问题：需要由用户保证在`get_function`前`register_function`。在demo中这并不是大问题，但是放在大型项目中，`get_function`在多个文件中被多次调用，需要由用户保证`register_function`在所有`get_function`前执行，这实在是太危险了。稳妥一点的方法是：
+```cpp
+void register_all_function() {
+	auto p_function_manager = /* get singleton instance */ ;
+	p_function_manager->register_function(sig_1, func_1);
+	p_function_manager->register_function(sig_2, func_2);
+	// ...
+}
+int main {
+	register_all_function();
+}
+```
+在`main`最开始的时候进行注册是最安全的做法，但是每添加一个函数，用户就要在`register_all_function`中进行注册，这也违背了开闭原则。
+
+因此我们有了新的需求：**main函数执行前完成对象的注册**。有[两种方法](https://stackoverflow.com/questions/10897552/call-a-function-before-main)能够在`main`前执行一段函数：**静态成员变量**和**全局变量**，**需要注意的是二者均需要在`cpp`文件中定义，不能够在头文件中**。通过`register_function`为全局变量赋值能够在`main`前执行`register_function`，因此我们还需要为`register_function`添加一个返回值：
+```cpp
+template <typename FunctionPtr>
+bool register_function(const std::string& function_sig, FunctionPtr function_ptr) {
+	// ...
+	return true;
+}
+```
+## 用全局变量注册函数
+通过定义全局变量能够在`main`执行前将需要的函数注册至`FunctionManager`。为了在使用更方便、代码可读性更高，`FunctionManager`提供了一个宏`_REGISTER_FUNCTION`，用于封装注册函数。其原理如下：
+```c++
+#define _REGISTER_FUNCTION(FunctionSig, FunctionPtr) \
+	bool b = register_function<decltype(FunctionPtr)>(FunctionSig, FunctionPtr);
+```
+这样带来了新的问题：在实际使用时，一个`.cpp`文件内通常会有多个类型相同的函数的实现，`_REGISTER_FUNCTION`将被调用多次：
+```cpp
+_REGISTER_FUNCTION("ADD", add);
+int add(int a, int b) { return a + b; }
+_REGISTER_FUNCTION("MUL", mul); // 编译错误，重复定义的变量b
+int mul(int a, int b) { return a * b; }
+```
+多次调用`_REGISTER_FUNCTION`会导致全局变量`b`被重复定义。因此需要用户手动提供不重复的变量名(`VariableName`)以防止编译错误，最终`_REGISTER_FUNCTION`的实现如下：
+```cpp
+#define _REGISTER_FUNCTION(VariableName, FunctionSig, FunctionPtr) \
+	bool Bool##VariableName = register_function<decltype(FunctionPtr)>(FunctionSig, FunctionPtr);
+
+// xxx.h
+int add(int, int);
+// xxx.cpp
+_REGISTER_FUNCTION(ADD, "ADD", add);
+int add(int a, int b) { return a + b; }
+```
+
+# FunctionManager适配的函数
+
+## 普通函数
+ - 普通函数
+```cpp
+float add(float a, float b) { return a + b; }
+_REGISTER_FUNCTION(ADD, "ADD", add);
+
+auto new_add = get_function<decltype(add)>("ADD");
+```
+ - 命名空间内的函数
+```cpp
+namespace FunctionManagerTest {
+    float add(float a, float b) { return a + b; }
+}
+_REGISTER_FUNCTION(ADD, "ADD", FunctionManagerTest::add);
+
+auto new_add = get_function<std::function<decltype(FunctionManagerTest::add)>>("ADD");
+```
+ - 模板函数
+```cpp
+template<typename T> T addT(T a, T b) { return a + b; }
+_REGISTER_FUNCTION(ADD, "ADD", addT<int>);
+
+ auto new_add = get_function<std::function<decltype(addT<int>)>>("ADD");
+```
+
+## 类内函数
+ - 静态函数
+```cpp
+class Real {
+public:
+    static float add(float a, float b) { return a + b; }
+};
+_REGISTER_FUNCTION(ADD, "ADD", Real::add);
+
+auto new_add = get_function<std::function<decltype(Real::add)>>("ADD");
+```
+ - 模板类的静态函数
+```cpp
+template<typename T>
+class Add {
+public:
+    static float add(T a, T b) { return a + b; }
+};
+_REGISTER_FUNCTION(ADD, "ADD", Add<int>::add);
+
+auto new_add = get_function<std::function<decltype(Add<int>::add)>>("ADD");
+```
+
+## 适配成员函数
+现在的`FunctionManager`能够支持的函数少了很重要的一类：成员函数。因为成员函数在被调用时会有一个`this`指针作为隐式参数，显然直接通过`&Real::add`是无法获得`this`指针的。这意味着我们需要添加新的接口。
+```cpp
+template<typename FunctionPtr, typename ObjectPtr>
+bool register_member_function(FunctionPtr func_ptr, ObjectPtr obj_ptr) {
+	return true;
+}
+```
+回看需求，我们希望能够在`FunctionManager`中获取到函数后，能够直接调用；同时`FunctionManager`中管理的也只是能够直接调用的`std::function`对象，并未区分成员函数或者非成员函数。现在问题简化为如何为某一个函数提供一个默认的参数(对象指针)，提供后，我们就能像调用普通函数一样调用成员函数了。
+
+[我们知道`std::bind`能够将函数与参数绑定，返回一个`Callable`对象](https://en.cppreference.com/w/cpp/utility/functional/bind)；[该对象能够使用对应的`std::funtion`接收](https://stackoverflow.com/questions/11372855/stdbind-to-stdfunction)；结合`std::placeholder`还能够在调用返回的`Callable`时提供参数：
+```cpp
+class Real { public: int add(int a, int b) { return a + b; } }
+
+Real real;
+std::function<int(int,int)> binded_add = std::bind(&Real::add, &real, std::placeholders::_1, std::placeholders::_2);
+std::cout << binded_add(2, 1) << std::endl;
+```
+现在如何提供默认参数的问题解决了，但是另一个问题又出现了：代码中的`std::function<int(int,int)>`是硬编码进去的，肯定不能实装，我们需要一种能够自动填充`std::function<>`内模板参数的方法。在网上找了大半天后，[终于有了一种基于模板的解决方案](https://stackoverflow.com/questions/9779105/generic-member-function-pointer-as-a-template-parameter)：
+```cpp
+template <typename Ret, typename Struct, typename ...Args, typename ObjectPtr>
+bool register_memeber_function(const std::string& sig, Ret(Struct::* func_ptr)(Args...) const, ObjectPtr obj_ptr) {
+	std::function<Ret(Args...)> func = std::bind(func_ptr, obj_ptr);
+	auto p_funciton_manager = FunctionManager<decltype(func)>::get_instance();
+	p_function_manager->register_function(sig, func);
+	return true;
+}
+
+class Real { public: int add(int a, int b) { return a + b; } }
+
+Real real;
+bool b = register_member_function("ADD", &Real::add, &real);
+```
+将`&Real::add`作为参数传入后能够自动推导出`Ret, Struct`以及可变参数`Args`；由于我们会绑定对象指针，因此我们只需要返回值`Ret`，参数`Args`作为`std::function`的模板参数。这样一来`std::function`的模板参数问题终于解决了。
+
+然而现在的代码是无法通过编译的，因为`std::bind`中没有添加正确数量的`std::placeholder`。这个问题的解决需要用到一点元编程，StackOverflow上有人[用自定义`placeholder`以及`std::make_integer_sequence`的方法来实现参数可变的`std::bind`](https://stackoverflow.com/questions/26129933/bind-to-function-with-an-unknown-number-of-arguments-in-c)：
+```cpp
+// https://stackoverflow.com/questions/26129933/bind-to-function-with-an-unknown-number-of-arguments-in-c
+template<int N>
+struct my_placeholder { static my_placeholder ph; };
+
+template<int N>
+my_placeholder<N> my_placeholder<N>::ph;
+
+namespace std {
+    template<int N>
+    struct is_placeholder<::my_placeholder<N>> : std::integral_constant<int, N> { };
+}
+
+template<class R, class T, class...Types, class U, int... indices>
+std::function<R (Types...)> bind_first(std::function<R (T, Types...)> f, U val, std::integer_sequence<int, indices...> /*seq*/) {
+    return std::bind(f, val, my_placeholder<indices+1>::ph...);
+}
+template<class R, class T, class...Types, class U>
+std::function<R (Types...)> bind_first(std::function<R (T, Types...)> f, U val) {
+    return bind_first(f, val, std::make_integer_sequence<int, sizeof...(Types)>());
+}
+```
+这里的核心思想是**在模板中传入长度与参数个数相同的整数序列，并且为每个序列中的整数添加一个`placeholder`**。其实并不需要自己定义一个`placeholder`，因为`std::placeholder`的实现是类似的：
+```cpp
+// PLACEHOLDER ARGUMENTS
+namespace placeholders {
+    _INLINE_VAR constexpr _Ph<1> _1{};
+    _INLINE_VAR constexpr _Ph<2> _2{};
+} // namespace placeholders
+```
+结合已有实现以及`std::placeholder`的解决方案如下：
+```cpp
+template <typename Ret, typename Struct, typename ...Args, typename ObjectPtr, int... Indices>
+std::function<Ret(Args...)> erase_class_info(Ret(Struct::* func_ptr)(Args...), ObjectPtr obj_ptr, std::integer_sequence<int, Indices...>)
+{
+	std::function<Ret(Args...)> erased_function = std::bind(func_ptr, obj_ptr, std::_Ph<Indices + 1>{}...);
+	return erased_function;
+}
+
+template <typename Ret, typename Struct, typename ...Args, typename ObjectPtr>
+bool register_memeber_function(const std::string& sig, Ret(Struct::* func_ptr)(Args...), ObjectPtr obj_ptr) {
+	std::function<Ret(Args...)> erased_func = erase_class_info(func_ptr, obj_ptr, std::make_integer_sequence<int, sizeof...(Args)>());
+	auto p_funciton_manager = FunctionManager<decltype(erased_func)>::get_instance();
+	p_funciton_manager->register_function(sig, erased_func);
+	return true;
+}
+```
+另外，成员函数添加`const`以后的函数类型是不同的，简单地添加两个类似接口可以解决这个问题：
+```cpp
+template <typename Ret, typename Struct, typename ...Args, typename ObjectPtr, int... Indices>
+std::function<Ret(Args...)> erase_class_info(Ret(Struct::* func_ptr)(Args...) const, ObjectPtr obj_ptr, std::integer_sequence<int, Indices...>)
+{
+	std::function<Ret(Args...)> erased_function = std::bind(func_ptr, obj_ptr, std::_Ph<Indices + 1>{}...);
+	return erased_function;
+}
+
+template <typename Ret, typename Struct, typename ...Args, typename ObjectPtr>
+bool register_memeber_function(const std::string& sig, Ret(Struct::* func_ptr)(Args...) const, ObjectPtr obj_ptr) {
+	std::function<Ret(Args...)> erased_func = erase_class_info(func_ptr, obj_ptr, std::make_integer_sequence<int, sizeof...(Args)>());
+	auto p_funciton_manager = FunctionManager<decltype(erased_func)>::get_instance();
+	p_funciton_manager->register_function(sig, erased_func);
+	return true;
+}
+```
+现在已经支持成员函数的注册了：
+```cpp
+class Real {
+public:
+	int add(int a, int b) const { return a + b; }
+	int sub(int a, int b) { return a - b; }
+};
+
+Real real;
+bool b1 = register_memeber_function("real", &Real::add, &real);
+bool b2 = register_memeber_function("REAL", &Real::sub, &real);
+auto f1 = get_function<std::function<int(int, int)>>("real");
+auto f2 = get_function<std::function<int(int, int)>>("REAL");
+std::cout << f1(2, 1) << std::endl;
+std::cout << f2(2, 1) << std::endl;
+```
+
+至此`FunctionManager`实现完成
+
+---
+
+# 补充
+## 更简单的接口
+前面提到了使用静态成员变量也能够实现注册功能，用静态成员变量注册函数
+可以进一步减少用户需要写的代码，`FunctionManager`希望不需要用户提供变量名。参考boost宏`BOOST_CLASS_EXPORT`，其利用模板类和静态成员变量实现了类的注册，并且不需要用户提供变量名，其原理如下：
+```cpp
+namespace boost::archive::detail::extra_detail {
+    template<> struct init_guid<ClassToRegister> {
+        static guid_initializer<ClassToRegister> const& g; //静态成员g
+    }
+    static guid_initializer<ClassToRegister> const& g = register_function(); // 定义g，同时注册类
+}
+```
+
+`BOOST_CLASS_EXPORT`还是不能满足需求，因为`BOOST_CLASS_EXPORT`用于注册类，倘若用于注册多个相同类型的函数会导致静态成员g重复定义，而实际注册函数时同一类型的函数往往会被注册多次。如：
+
+```cpp
+int add(int a, int b) { return a + b; }
+int mul(int a, int b) { return a * b; }
+_BOOST_LIKE_REGISTER("ADD", add);
+_BOOST_LIKE_REGISTER("MUL", mul); // 静态成员g重复定义
+```
+`FunctionManager`通过命名空间解决重复定义这一问题，宏`_EASY_REGISTER_FUNCTION`实现如下：
+```cpp
+#define _EASY_REGISTER_FUNCTION(FunctionSig, FunctionPtr) \
+    namespace VicentChenSpace { \
+        namespace Dummy { \
+            namespace FunctionPtr { \
+                struct Dummy { \
+                    static bool const& b; \
+                }; \
+            } \
+        } \
+    } \
+    bool const& VicentChenSpace::Dummy::FunctionPtr::Dummy::b = register_function<decltype(::FunctionPtr)>(FunctionSig, ::FunctionPtr); \
+```
+虽然`_EASY_REGISTER_FUNCTION`使用起来更方便，但有以下问题：
+ - 需要`c++17`支持
+ - 不支持注册带有模板的函数
+ - 命名空间相关问题
+
+## 参考
+1. [StackOverflow - Call a function before main](https://stackoverflow.com/questions/10897552/call-a-function-before-main)
+2. [StackOverflow - std::bind to std::function?](https://stackoverflow.com/questions/11372855/stdbind-to-stdfunction)
+3. [StackOverflow - generic member function pointer as a template parameter](https://stackoverflow.com/questions/9779105/generic-member-function-pointer-as-a-template-parameter)
+4. [StackOverflow - Bind to function with an unknown number of arguments in C++](https://stackoverflow.com/questions/26129933/bind-to-function-with-an-unknown-number-of-arguments-in-c)
+5. [cppreference - std::bind](https://en.cppreference.com/w/cpp/utility/functional/bind)
+
+<style class="fallback">
+    body{visibility:hidden}
+</style>
+<script>
+    markdeepOptions={tocStyle:'none'};
+</script>
+
+<!-- Markdeep: -->
+<script src="https://casual-effects.com/markdeep/latest/markdeep.min.js?" charset="utf-8"></script>
